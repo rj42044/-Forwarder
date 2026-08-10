@@ -5,7 +5,6 @@ import asyncio
 import sqlite3
 import datetime
 import logging
-import msvcrt
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from price_checker import check_deal_and_screenshot, extract_canonical_id, resolve_url
