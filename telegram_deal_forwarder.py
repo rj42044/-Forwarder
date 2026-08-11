@@ -296,8 +296,6 @@ async def main():
     me = await client.get_me()
     print(f"✅ Userbot logged in as: Raja (@rj4204)")
 
-    # Sync recent top deals on startup
-    await process_recent_history(limit=5)
 
     print(f"📡 Real-time listener active for Deal Blast Shopping...")
     await client.run_until_disconnected()
