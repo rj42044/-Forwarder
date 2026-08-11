@@ -271,6 +271,17 @@ async def new_channel_post_handler(event):
     else:
         logger.warning("No valid deal URL found in post.")
 
+async def process_recent_history(limit=5):
+    """Processes recent N messages from the channel on startup."""
+    logger.info(f"Syncing recent top deals from channel ({SOURCE_CHANNEL})...")
+    try:
+        async for msg in client.iter_messages(SOURCE_CHANNEL, limit=limit):
+            primary_url = extract_primary_deal_url(msg.text, msg.buttons)
+            if primary_url:
+                await process_and_forward_deal(primary_url, msg)
+    except Exception as e:
+        logger.error(f"Error syncing channel history: {e}")
+
 async def main():
     init_db()
     print("==================================================")
