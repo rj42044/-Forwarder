@@ -13,11 +13,16 @@ from price_checker import check_deal_and_screenshot, extract_canonical_id, resol
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# --- Single Instance Lock ---
+# --- Single Instance Lock (Windows msvcrt / Linux fcntl) ---
 LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deal_forwarder.lock")
 try:
     lock_fp = open(LOCK_FILE, 'w')
-    msvcrt.locking(lock_fp.fileno(), msvcrt.LK_NBLCK, 1)
+    if os.name == 'nt':
+        import msvcrt
+        msvcrt.locking(lock_fp.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except Exception:
     logger.error("❌ Another instance of telegram_deal_forwarder is already running! Exiting immediately.")
     sys.exit(0)
@@ -25,8 +30,17 @@ except Exception:
 # --- Configuration ---
 API_ID = int(os.environ.get("TG_API_ID", "32206759"))
 API_HASH = os.environ.get("TG_API_HASH", "7db3022378b608c86cad321de9eb3261")
-
 STRING_SESSION = os.environ.get("TG_STRING_SESSION", "1BVtsOH4BuzMhWW4Bhur2zS_0aT8ufbKDjd-HnLzxMWWDWkMDpm8xoaAKv4VA2xZy7zp5b5lwM97GBauLgiIywHOtH4NX-MEb-5fojWfTjSEL4mA9eUYktivUmipj4WCqHp4nf8ytChEG5FZIw8dKD3C049exjIkiFj2aBZqI9O5s95KP76GNU_t3hgmi-ZPni61k_E9mc2WkAj3NDuG7HWkXncRtGqkyuMOTKLMFF1UIOHvRpmr618AzH5T7wUTIiYhQmY8Uq7uVuJGcQqTyO_wGSpZjOA7bz4yK3BREuLJKKbCuEhFnG5h61beww6S-MGoOdnG_Yf8bTYyJNhSJb3obeob0pWw=")
+
+# Attempt to load from Streamlit Secrets if available
+try:
+    import streamlit as st
+    if hasattr(st, "secrets") and st.secrets:
+        API_ID = int(st.secrets.get("TG_API_ID", API_ID))
+        API_HASH = str(st.secrets.get("TG_API_HASH", API_HASH))
+        STRING_SESSION = str(st.secrets.get("TG_STRING_SESSION", STRING_SESSION))
+except Exception:
+    pass
 
 # Source Channel: Deal Blast Shopping by Indiafreestuff (https://t.me/+nHuLKLYJMFxhNmRl)
 SOURCE_CHANNEL = -1001366716672
@@ -197,7 +211,11 @@ async def process_and_forward_deal(raw_url, event_msg):
     logger.info(f"Processing deal URL: {raw_url}")
     
     # Capture Playwright product screenshot & resolve primary store URL
-    deal_info = await check_deal_and_screenshot(raw_url, min_discount_pct=MIN_DISCOUNT_PERCENT)
+    deal_info = {}
+    try:
+        deal_info = await check_deal_and_screenshot(raw_url, min_discount_pct=MIN_DISCOUNT_PERCENT)
+    except Exception as e:
+        logger.warning(f"Playwright engine warning (falling back to fast HTTP resolution): {e}")
     
     image_file_path = None
     resolved_prod_url = resolve_url(raw_url)
