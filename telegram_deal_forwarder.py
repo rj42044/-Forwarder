@@ -1,13 +1,14 @@
 import os
-import re
 import sys
 import asyncio
-import sqlite3
-import datetime
 import logging
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from price_checker import check_deal_and_screenshot, extract_canonical_id, resolve_url
+from forwarder_utils import (
+    init_db, DB_PATH, is_already_forwarded, record_forwarded_deal,
+    is_search_or_list_url, extract_primary_deal_url, clean_and_resolve_source_text
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,10 +29,10 @@ API_ID = int(os.environ.get("TG_API_ID", "32206759"))
 API_HASH = os.environ.get("TG_API_HASH", "7db3022378b608c86cad321de9eb3261")
 
 DEFAULT_SESSION = (
-    "1BVtsOH4BuzMhWW4Bhur2zS_0aT8ufbKDjd-HnLzxMWWDWkMDpm8xoaAKv4VA2xZy7zp5b5lwM97GBauLgiIywHOtH4NX-MEb-5"
-    "fojWfTjSEL4mA9eUYktivUmipj4WCqHp4nf8ytChEG5FZIw8dKD3C049exjIkiFj2aBZqI9O5s95KP76GNU_t3hgmi-ZPni61k_"
-    "E9mc2WkAj3NDuG7HWkXncRtGqkyuMOTKLMFF1UIOHvRpmr618AzH5T7wUTIiYhQmY8Uq7uVuJGcQqTyO_wGSpZjOA7bz4yK3BRE"
-    "uLJKKbCuEhFnG5h61beww6S-MGoOdnG_Yf8bTYyJNhSJb3obeob0pWw="
+    "1BVtsOH4Bu3Dx8amqNZg9wNASIzCrlUtAX1DaMmJdzk5vcFV9t_97e9xV7eUKIU56OUvHxM_aDfCQYbghrM7qZZBrUCzF3uT_"
+    "LGRekekoGYzDPZzGGfGr5-iG51BbSQ0HNFDO9vCx-3oQRD_kZoqm5QWInDrlibg4Ey2zMSyT75DEmOMC1mqN5mEBcoeQ5IdR4"
+    "FocS6xwF01bIGx_WWw6GtlqwcN42VsrSCk2eemvoO61qGx2J1tD10HaiR_baW4Berl_8FXCMP6v7KCFB77AC_I4VpO9NvdQmj"
+    "3xO36W2rZha8wXQN5gmSYwGenCo9GhKXk04iKsgVZl-UYMoKo7Fm55iGr65QU="
 )
 
 STRING_SESSION = os.environ.get("TG_STRING_SESSION", DEFAULT_SESSION)
@@ -47,111 +48,11 @@ except Exception:
 
 SOURCE_CHANNEL = -1001366716672
 DESTINATION_BOT = "ExtraPeBot"
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forwarded_deals.db")
 TEMP_IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 os.makedirs(TEMP_IMG_DIR, exist_ok=True)
 MIN_POST_INTERVAL_SECONDS = 0
 MIN_DISCOUNT_PERCENT = 0
 LAST_POST_TIME = 0
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.cursor().execute("""
-        CREATE TABLE IF NOT EXISTS forwarded_deals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_url TEXT,
-            resolved_url TEXT UNIQUE,
-            canonical_id TEXT UNIQUE,
-            title TEXT,
-            price TEXT,
-            discount_pct INTEGER,
-            forwarded_at TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def is_already_forwarded(raw_url, resolved_url=None, canonical_id=None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id FROM forwarded_deals WHERE raw_url = ? OR resolved_url = ?", (raw_url, raw_url))
-    if c.fetchone():
-        conn.close()
-        return True
-    if resolved_url:
-        c.execute("SELECT id FROM forwarded_deals WHERE resolved_url = ? OR raw_url = ?", (resolved_url, resolved_url))
-        if c.fetchone():
-            conn.close()
-            return True
-    if canonical_id:
-        c.execute("SELECT id FROM forwarded_deals WHERE canonical_id = ?", (canonical_id,))
-        if c.fetchone():
-            conn.close()
-            return True
-    conn.close()
-    return False
-
-def record_forwarded_deal(raw_url, resolved_url, canonical_id, title, price, discount_pct):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c.execute(
-            "INSERT INTO forwarded_deals (raw_url, resolved_url, canonical_id, title, price, discount_pct, forwarded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (raw_url, resolved_url, canonical_id, title, price, discount_pct, now_str)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.warning("DB record warning: " + str(e))
-
-def is_search_or_list_url(url):
-    if not url:
-        return True
-    u = url.lower()
-    if "hidden-keywords=" in u or "srs=" in u:
-        return False
-    if "/s?k=" in u or "/s?rh=" in u or "/b?" in u or "search?q=" in u or "collection-tab-name=" in u or "param=dwnk" in u:
-        return True
-    return False
-
-def extract_primary_deal_url(text, buttons=None):
-    if text:
-        m = re.search(r'buy\s*now\s*:?\s*(https?://[^\s]+)', text, re.I)
-        if m:
-            clean_u = re.sub(r'[\)\],\.!]+$', '', m.group(1))
-            if not is_search_or_list_url(clean_u):
-                return clean_u
-        for u in re.findall(r'(https?://[^\s]+)', text):
-            clean_u = re.sub(r'[\)\],\.!]+$', '', u)
-            if "readmore" not in clean_u.lower() and "read-more" not in clean_u.lower() and not is_search_or_list_url(clean_u):
-                return clean_u
-    if buttons:
-        for row in buttons:
-            for btn in row:
-                if hasattr(btn, 'url') and btn.url:
-                    clean_b = re.sub(r'[\)\],\.!]+$', '', btn.url)
-                    if not is_search_or_list_url(clean_b):
-                        return clean_b
-    return None
-
-def clean_and_resolve_source_text(text):
-    if not text:
-        return ""
-    lines = []
-    for line in text.split('\n'):
-        line_str = line.strip()
-        if not line_str or "read more" in line_str.lower() or "readmore" in line_str.lower():
-            continue
-        for raw_u in re.findall(r'https?://[^\s]+', line_str):
-            clean_u = re.sub(r'[\)\],\.!]+$', '', raw_u)
-            resolved_u = resolve_url(clean_u)
-            if resolved_u and resolved_u != clean_u:
-                logger.info("Resolved link: " + str(clean_u) + " -> " + str(resolved_u))
-                line_str = line_str.replace(raw_u, resolved_u)
-        lines.append(line_str)
-    return re.sub(r'\n{3,}', '\n\n', "\n".join(lines).strip())
 
 client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
 
