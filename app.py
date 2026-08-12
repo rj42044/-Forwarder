@@ -15,6 +15,8 @@ st.set_page_config(
 )
 
 # --- 24/7 GLOBAL BACKGROUND BOT LAUNCHER ---
+# Using @st.cache_resource ensures the bot thread starts ONCE when Streamlit Cloud boots up
+# and STAYS RUNNING 24/7 IN THE CLOUD SERVER even when all browser tabs are closed!
 @st.cache_resource
 def start_global_247_forwarder_bot():
     def _run():
@@ -68,6 +70,7 @@ if os.path.exists(DB_PATH):
             m2.metric("Latest Forwarded At", rows[0][5] if len(rows[0]) > 5 else "N/A")
             m3.metric("Cloud Server Status", "🟢 24/7 Active")
             
+            # Display cleanly formatted table
             table_data = []
             for r in rows:
                 table_data.append({
