@@ -5,7 +5,6 @@ import asyncio
 import threading
 import streamlit as st
 
-# Import the existing forwarder functions
 from telegram_deal_forwarder import main as run_deal_forwarder, DB_PATH, SOURCE_CHANNEL, DESTINATION_BOT
 
 st.set_page_config(
@@ -15,8 +14,6 @@ st.set_page_config(
 )
 
 # --- 24/7 GLOBAL BACKGROUND BOT LAUNCHER ---
-# Using @st.cache_resource ensures the bot thread starts ONCE when Streamlit Cloud boots up
-# and STAYS RUNNING 24/7 IN THE CLOUD SERVER even when all browser tabs are closed!
 @st.cache_resource
 def start_global_247_forwarder_bot():
     def _run():
@@ -25,22 +22,20 @@ def start_global_247_forwarder_bot():
         try:
             loop.run_until_complete(run_deal_forwarder())
         except Exception as e:
-            print(f"Global bot loop error: {e}")
+            print("Global bot loop error:", e)
             
     t = threading.Thread(target=_run, daemon=True, name="GlobalTelegramDealForwarder")
     t.start()
     return t
 
-# Auto-start global 24/7 background worker on server boot
 bot_thread = start_global_247_forwarder_bot()
 
 st.title("⚡ Telegram Deal Forwarder - 24/7 Cloud Worker")
-st.markdown("Real-time deal forwarder from **Deal Blast Shopping** to **@ExtraPeBot** with Playwright product screenshots.")
+st.markdown("Real-time deal forwarder from Deal Blast Shopping to @ExtraPeBot with Playwright product screenshots.")
 
-# Sidebar Status & Configuration
 st.sidebar.header("📡 Live Status & Controls")
 st.sidebar.success("🟢 24/7 Cloud Worker: ACTIVE")
-st.sidebar.info(f"**Source Channel**: `{SOURCE_CHANNEL}`\n\n**Destination Bot**: `@{DESTINATION_BOT}`")
+st.sidebar.info("Source Channel: " + str(SOURCE_CHANNEL) + "\n\nDestination Bot: @" + str(DESTINATION_BOT))
 
 col1, col2 = st.columns(2)
 
@@ -52,8 +47,6 @@ with col2:
         st.rerun()
 
 st.divider()
-
-# Live Analytics & Database View
 st.subheader("📊 Forwarded Deals History")
 
 if os.path.exists(DB_PATH):
@@ -70,7 +63,6 @@ if os.path.exists(DB_PATH):
             m2.metric("Latest Forwarded At", rows[0][5] if len(rows[0]) > 5 else "N/A")
             m3.metric("Cloud Server Status", "🟢 24/7 Active")
             
-            # Display cleanly formatted table
             table_data = []
             for r in rows:
                 table_data.append({
@@ -86,6 +78,6 @@ if os.path.exists(DB_PATH):
         else:
             st.info("No deals forwarded yet. New deals will appear here automatically.")
     except Exception as e:
-        st.error(f"Database error: {e}")
+        st.error("Database error: " + str(e))
 else:
     st.info("Database initializing...")
