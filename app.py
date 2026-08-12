@@ -5,6 +5,7 @@ import asyncio
 import threading
 import streamlit as st
 
+# Import the existing forwarder functions
 from telegram_deal_forwarder import main as run_deal_forwarder, DB_PATH, SOURCE_CHANNEL, DESTINATION_BOT
 
 st.set_page_config(
@@ -40,8 +41,10 @@ st.sidebar.success("🟢 24/7 Cloud Worker: ACTIVE")
 st.sidebar.info(f"**Source Channel**: `{SOURCE_CHANNEL}`\n\n**Destination Bot**: `@{DESTINATION_BOT}`")
 
 col1, col2 = st.columns(2)
+
 with col1:
     st.success("✅ Bot is running 24/7 in the cloud server background.")
+
 with col2:
     if st.button("🔄 Refresh Live Deals Table", use_container_width=True):
         st.rerun()
@@ -82,4 +85,4 @@ if os.path.exists(DB_PATH):
     except Exception as e:
         st.error(f"Database error: {e}")
 else:
-    st.info("Database initializing...") 
+    st.info("Database initializing...")
